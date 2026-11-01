@@ -266,7 +266,7 @@ def run(which):
         grid("E22", ["J-EFF", "FF-JR", "OURS", "IFD-Q"], [("honest", dict(gamer_share=0.0)), ("gaming", dict(gamer_share=0.2))], seeds=[0, 1])
     if which in ("E23", "all"):  # overnight continuity: SoC and position carry over (no home charging)
         grid("E23", CORE + NOCTG, [("hetero", dict(carry=1.0)), ("homog", dict(carry=1.0, share_heavy=0.0, share_b=0.0))], seeds=[0, 1])
-    if which in ("E24", "all"):  # swap-weight knobs that Table IV leaves fixed
+    if which in ("E24", "all"):  # swap-weight knobs that Table S14 leaves fixed
         knobs = [("kappa_s=0.5", dict(kappa_s=0.5)), ("kappa_s=2", dict(kappa_s=2.0)), ("th_pro=0.35", dict(th_pro=0.35)),
                  ("th_pro=0.55", dict(th_pro=0.55)), ("c_wait=0.1", dict(c_wait=0.1)), ("c_wait=0.4", dict(c_wait=0.4)),
                  ("n_res=1", dict(n_res=1)), ("n_res=5", dict(n_res=5)), ("res_slack=5", dict(res_slack=5)), ("res_slack=20", dict(res_slack=20))]
