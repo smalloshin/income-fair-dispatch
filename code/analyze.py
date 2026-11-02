@@ -203,7 +203,7 @@ def table_whopays():
             cells.append(f"{v.mean():+.2f}{{\\scriptsize$\\pm${ci(v):.2f}}}")
             rec.append(dict(policy=p, quintile=q + 1, mean=v.mean(), ci=ci(v)))
         x = r[r.policy == p].set_index(K)
-        fx = (x.rate - base.rate.loc[x.index]).to_frame("d").assign(q=base.q.loc[x.index].values).groupby("q").d.mean()
+        fx = (x.rate - base.rate.loc[x.index]).to_frame("d").assign(q=base.q.loc[x.index].values).reset_index().groupby(["q"] + CL).d.mean().groupby("q").mean()
         spear = pd.concat([x.rate, base.rate], axis=1, keys=["a", "b"]).dropna().reset_index().groupby(["dist", "week", "seed"]).apply(
             lambda t: t.a.corr(t.b, method="spearman"), include_groups=False).mean()
         rec[-1].update(fixed_q1=fx.loc[0], fixed_q5=fx.loc[4], spearman=spear)
@@ -241,6 +241,27 @@ def table_net():
                                  + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}\n")
     out = pd.DataFrame(rec)
     out.to_csv(RES / "summary_net.csv", index=False)
+    return out
+
+
+def table_constrained():
+    """One-factor contrasts in the constrained network (E19 and E29)."""
+    d = pd.concat([pd.read_csv(RES / "E19.csv"), pd.read_csv(RES / "E29.csv")], ignore_index=True)
+    M = [("swap_wait", 1, 1), ("swap_wait_p90", 1, 1), ("mean_wait", 1, 2), ("shortfall", 1, 3), ("topup_per_courier_week", 1, 1), ("gap_dis", 1, 2)]
+    C = [("EFF", "EFF-R0", "rate normalization"), ("EFF", "SEQ", "+ sequential reservation"), ("SEQ-R-noLock", "SEQ-R", "+ lock (sequential)"), ("J-EFF-noLock", "J-EFF", "+ lock (joint)"),
+         ("SEQ-R", "J-EFF", "sequential $\\to$ joint"), ("J-EFF", "J-EFF-0", "$-$ cost-to-go (J-EFF)"), ("OURS", "OURS-0", "$-$ cost-to-go (IFD)"), ("J-EFF", "OURS", "+ deficit signal"),
+         ("OURS-noQswap", "OURS", "+ deficit in swap weights"), ("J-EFF", "FF-JR", "+ FF-JR signal"), ("J-EFF", "FF-JR-10", "+ FF-JR signal, $\\lambda$=10"), ("OURS", "FF-JR-10", "IFD $\\to$ FF-JR, $\\lambda$=10")]
+    rows, rec = [], []
+    for a, b, lab in C:
+        cells = []
+        for c, s_, k in M:
+            m, h, pv = paired_diff(d, b, a, c)
+            rec.append(dict(ref=a, new=b, metric=c, diff=m, ci=h, p=pv))
+            cells.append(f"{m * s_:+.{k}f}" + ("$^*$" if pv == pv and pv < 0.05 else ""))
+        rows.append(f"{nm(a)} $\\to$ {nm(b)} & {lab} & " + " & ".join(cells) + " \\\\")
+    (TAB / "constrained.tex").write_text("\\begin{tabular}{llrrrrrr}\n\\toprule\nContrast & Factor & Swap wait & P90 & Wait & Shortfall & Top-up & Gap \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}\n")
+    out = pd.DataFrame(rec)
+    out.to_csv(RES / "summary_constrained.csv", index=False)
     return out
 
 
@@ -630,6 +651,7 @@ if __name__ == "__main__":
     print(table_ablation().round(4).to_string())
     print(table_whopays().round(3).to_string())
     print(table_net().round(3).to_string())
+    print(table_constrained().round(3).to_string())
     print(validation_subset().round(4).to_string())
     for f in (fig_tradeoff, fig_rates, fig_scarcity, fig_paired, fig_queue):
         try:

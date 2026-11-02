@@ -281,6 +281,9 @@ def run(which):
         grid("E27", pols, [(tag, dict(gamer_share=0.2, gaming=tag)) for tag in ("none", "inert", "extend")], seeds=[0, 1])
     if which in ("E28", "all"):  # per-courier net income and FF-JR at lambda=10, same seeds and weeks as E1
         grid("E28", ["J-EFF", "J-EFF-0", "OURS", "OURS-0", "FF-JR", "FF-JR-10"], [("default", {})])
+    if which in ("E29", "all"):  # one-factor contrasts in the constrained network
+        grid("E29", ["EFF-R", "EFF-R0", "SEQ-R", "SEQ-R-noLock", "J-EFF-noLock", "J-EFF-0", "OURS-0", "OURS-noQswap", "FF-JR-10"],
+             [("constrained", dict(cab_slots=6, p_slot=400.0, p_cab=1600.0))], seeds=[0, 1, 2])
     if which in ("E10", "all"):  # cabinet placement
         grid("E10", CORE, [("random-sites", dict(cab_place="random"))], seeds=[0, 1])
 
