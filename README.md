@@ -38,3 +38,7 @@ python3 -I code/analyze.py
 ```
 
 `run_experiments.py` also takes a single stage, such as `cal` or `E1`; run `cal` before any experiment, because it writes `results/calibration.json`. Results go to `results/`. `analyze.py` writes tables to `paper/tables/` and figures to `paper/figs/`.
+
+## License
+
+The code is released under the [MIT License](LICENSE). The LaDe data keep their own Apache-2.0 license.
