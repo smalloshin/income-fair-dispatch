@@ -46,6 +46,7 @@ def policies(rho, V, lam, lamr=None):
         "OURS-noQswap": Policy("OURS-noQswap", "dpp", "joint", V=V, rho=rho, qswap=False),
         "IFD-Q": Policy("IFD-Q", "dpp", "joint", V=V, rho=rho, signal="queue"),
         "FF-JR-0": Policy("FF-JR-0", "ff_rate", "joint", lam=lamr, ctg=0.0),
+        "FF-JR-10": Policy("FF-JR-10", "ff_rate", "joint", lam=10.0),  # interior weight, compared on the same seeds and weeks
         "OURS-0": Policy("OURS-0", "dpp", "joint", V=V, rho=rho, ctg=0.0),
         "EFF-J": Policy("EFF-J", "eff", "joint"),  # joint reservation columns without rate normalization (RR-31)
         "OURS-C": Policy("OURS-C", "dpp", "joint", V=V, rho=rho, credit=True),  # IFD on credited time
@@ -57,7 +58,7 @@ def job(a):
     exp, dist, days, cfg, pol, rho_eval, tag = a
     o, x = run_week(dist, days, cfg, pol, keep_trace=(exp in ("E9", "E14")), rho_eval=rho_eval)
     o.update(exp=exp, tag=tag)
-    rates = pd.DataFrame(dict(courier=np.arange(len(x["rate"])), rate=x["rate"], hours=x["hours"], credit=x["credit"], earn=x["earn"], gamer=x["gamer"], heavy=x["heavy"], ptype=x["ptype"]))
+    rates = pd.DataFrame(dict(courier=np.arange(len(x["rate"])), rate=x["rate"], hours=x["hours"], credit=x["credit"], earn=x["earn"], gamer=x["gamer"], heavy=x["heavy"], ptype=x["ptype"], km=x["km"]))
     for k in ("exp", "dist", "week", "seed", "policy", "tag"):
         rates[k] = o[k]
     tr = pd.DataFrame(x["trace"], columns=["day", "t", "q_mean", "q_max", "online"]) if x["trace"] else None
@@ -234,7 +235,7 @@ def run(which):
     if which in ("E1b", "all"):  # FairFoody baselines at lambda=1 (stronger fairness than the tie-break choice)
         mk = [lambda rho: Policy("FF lam=1", "ff", "thresh", lam=1.0), lambda rho: Policy("FFJ lam=1", "ff", "joint", lam=1.0)]
         grid("E1b", mk, [("default", {})])
-    if which in ("E18", "all"):  # confirmatory hold-out: every 7-day block never used for calibration, testing or development
+    if which in ("E18", "all"):  # additional temporal validation: every whole 7-day block outside calibration and test weeks
         from week import inst
         jobs = []
         for d in DISTS:
@@ -278,6 +279,8 @@ def run(which):
     if which in ("E27", "all"):  # strategic padding: online-time vs credited-time accounting, honest vs 20% gamers
         pols = ["J-EFF", "OURS", "OURS-C", "FF-JR", "FF-JR-C"]
         grid("E27", pols, [(tag, dict(gamer_share=0.2, gaming=tag)) for tag in ("none", "inert", "extend")], seeds=[0, 1])
+    if which in ("E28", "all"):  # per-courier net income and FF-JR at lambda=10, same seeds and weeks as E1
+        grid("E28", ["J-EFF", "J-EFF-0", "OURS", "OURS-0", "FF-JR", "FF-JR-10"], [("default", {})])
     if which in ("E10", "all"):  # cabinet placement
         grid("E10", CORE, [("random-sites", dict(cab_place="random"))], seeds=[0, 1])
 

@@ -48,6 +48,7 @@ def run_week(dist, days, cfg, pol, keep_trace=False, rho_eval=None):
     tot = {key: 0.0 for key in SUM_KEYS}
     waits, sww, late, kmo, ms, trace = [], [], [], [], [], []
     overtime, unfinished, shift_h, pay_all = 0.0, 0, 0.0, 0.0
+    km_i = np.zeros(n)
     path = hashlib.sha1()  # fingerprint of assignments, earnings, and end-of-day physical state
     for d in days:
         s = Sim(I, d, cfg, pol, persona=persona)
@@ -61,6 +62,7 @@ def run_week(dist, days, cfg, pol, keep_trace=False, rho_eval=None):
         if keep_trace:
             trace += [(d,) + x for x in s.trace]
         assert m["deficit_ok"]
+        km_i += s.km_i
         for arr in (s.o_who, s.o_state, s.earn, s.E, s.xy, np.concatenate(s.pk_E), np.concatenate(s.pk_res)):
             path.update(np.ascontiguousarray(arr).tobytes())
         persona.update(earn=s.earn, Q=s.Q, online=s.online_min, credit=s.credit_min, E_end=s.E.copy(), xy_end=s.xy.copy())
@@ -95,5 +97,5 @@ def run_week(dist, days, cfg, pol, keep_trace=False, rho_eval=None):
                credit_share=float(persona["credit"].sum() / max(persona["online"].sum(), 1e-9)),
                q_end_mean=float(persona["Q"].mean()), q_end_max=float(persona["Q"].max()),
                path_hash=path.hexdigest(), dec_ms_mean=float(np.mean(ms)), dec_ms_p99=float(np.percentile(ms, 99)), dec_ms_max=float(np.max(ms)))
-    extra = dict(rate=rate, hours=hrs, credit=persona["credit"] / 60.0, earn=persona["earn"], gamer=persona["gamer"], heavy=persona["heavy"], ptype=persona["ptype"], trace=trace, Q=persona["Q"])
+    extra = dict(km=km_i, rate=rate, hours=hrs, credit=persona["credit"] / 60.0, earn=persona["earn"], gamer=persona["gamer"], heavy=persona["heavy"], ptype=persona["ptype"], trace=trace, Q=persona["Q"])
     return out, extra

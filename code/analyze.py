@@ -4,6 +4,7 @@ Inference is clustered by district-week: seeds are averaged within each district
 paired across policies; p-values are Holm-adjusted within each metric's family of comparisons against IFD.
 """
 import json
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -23,8 +24,8 @@ plt.rcParams.update({"font.size": 8, "font.family": "serif", "axes.linewidth": 0
 COL = {"IFD-Q": "#bcbd22", "EFF": "#7f7f7f", "SEQ": "#bcbd22", "FF": "#ff9896", "FFJ": "#d62728", "FF-JR": "#9467bd", "J-EFF": "#1f77b4",
        "OURS": "#2ca02c", "NEAR": "#8c564b", "AGN": "#e377c2", "DPP-THR": "#17becf", "OURS-noRes": "#98df8a",
        "EFF-R": "#c7c7c7", "SEQ-R": "#dbdb8d"}
-ORDER = ["NEAR", "EFF", "AGN", "SEQ", "FF", "FFJ", "EFF-R", "SEQ-R", "J-EFF", "FF-JR", "DPP-THR", "OURS-noRes", "IFD-Q", "OURS"]
-NAMES = {"EFF-R0": "EFF-R0", "SEQ-R-noLock": "SEQ-R-noLock", "J-EFF-noLock": "J-EFF-noLock", "OURS-noQswap": "IFD-noQswap", "J-EFF-0": "J-EFF-0", "OURS-0": "IFD-0", "FF-JR-0": "FF-JR-0", "NEAR": "NEAR", "EFF": "EFF", "AGN": "AGN", "SEQ": "SEQ", "FF": "FF", "FFJ": "FF-J", "EFF-R": "EFF-R",
+ORDER = ["NEAR", "EFF", "AGN", "SEQ", "FF", "FFJ", "EFF-R", "SEQ-R", "J-EFF", "J-EFF-0", "FF-JR", "FF-JR-10", "DPP-THR", "OURS-noRes", "IFD-Q", "OURS-0", "OURS"]
+NAMES = {"EFF-R0": "EFF-R0", "SEQ-R-noLock": "SEQ-R-noLock", "J-EFF-noLock": "J-EFF-noLock", "OURS-noQswap": "IFD-noQswap", "J-EFF-0": "J-EFF-0", "OURS-0": "IFD-0", "FF-JR-10": "FF-JR ($\\lambda$=10)", "FF-JR-0": "FF-JR-0", "NEAR": "NEAR", "EFF": "EFF", "AGN": "AGN", "SEQ": "SEQ", "FF": "FF", "FFJ": "FF-J", "EFF-R": "EFF-R",
          "SEQ-R": "SEQ-R", "J-EFF": "J-EFF", "FF-JR": "FF-JR", "DPP-THR": "DPP-THR", "OURS-noRes": "IFD-noRes",
          "OURS": "IFD"}
 W1 = 3.5  # IEEE column width (in)
@@ -81,6 +82,8 @@ MAIN_COLS = [("ontime_rate", "On time (\\%)", 100, 1), ("mean_wait", "Wait", 1, 
 
 def table_main():
     df = pd.read_csv(RES / "E1.csv")
+    e28 = pd.read_csv(RES / "E28.csv")
+    df = pd.concat([df, e28[e28.policy == "FF-JR-10"]], ignore_index=True)
     pols = [p for p in ORDER if p in set(df.policy)]
     marks = {}
     for c, *_ in MAIN_COLS:
@@ -174,33 +177,95 @@ def km_per_courier_week(e):
     return e.assign(km_cw=e.km_per_order * e.service_rate * req / e.fleet)
 
 
+def own_quintiles(t, col="rate"):
+    """Mean of `col` in each policy's own within-episode quintiles (free of regression to the mean)."""
+    t = t.assign(q=t.groupby(["dist", "week", "seed"])[col].transform(lambda x: pd.qcut(x.rank(method="first"), 5, labels=False)))
+    return t.groupby(CL + ["seed", "q"])[col].mean()
+
+
 def table_whopays():
-    """Who pays for the floor: change in weekly earnings rate by the courier's J-EFF earnings quintile (same couriers,
-    seeds, shifts, demand), and the platform-cost comparison with efficiency-only dispatch plus a cash top-up."""
-    r = pd.read_csv(RES / "E1_rates.csv")
-    e1 = km_per_courier_week(pd.read_csv(RES / "E1.csv"))
+    """Earnings distribution by each policy's own quintile against J-EFF, and the fixed-courier contrast as a placebo
+    check: following J-EFF's quintile couriers confounds redistribution with regression to the mean."""
+    r = pd.concat([pd.read_csv(RES / "E1_rates.csv"), pd.read_csv(RES / "E28_rates.csv").query("policy == 'FF-JR-10'")], ignore_index=True)
+    e1 = km_per_courier_week(pd.concat([pd.read_csv(RES / "E1.csv"), pd.read_csv(RES / "E28.csv").query("policy == 'FF-JR-10'")], ignore_index=True))
     K = ["dist", "week", "seed", "courier"]
     base = r[r.policy == "J-EFF"].set_index(K)
     base = base.assign(q=base.groupby(["dist", "week", "seed"]).rate.transform(lambda x: pd.qcut(x.rank(method="first"), 5, labels=False)))
+    A = own_quintiles(r[r.policy == "J-EFF"])
     rows, rec = [], []
-    for p in ["OURS", "IFD-Q", "FF-JR"]:
-        x = r[r.policy == p].set_index(K)
-        dlt = (x.rate - base.rate.loc[x.index]).to_frame("d").assign(q=base.q.loc[x.index].values).reset_index()
-        g = dlt.groupby(["q"] + CL).d.mean()
+    m = e1.groupby("policy")["topup_per_courier_week"].mean()
+    for p in ["OURS", "OURS-0", "IFD-Q", "FF-JR", "FF-JR-10", "J-EFF-0"]:
+        d = (own_quintiles(r[r.policy == p]) - A).reset_index(name="d")
+        g = d.groupby(["q"] + CL).d.mean()
         cells = []
         for q in range(5):
             v = g.loc[q]
-            rec.append(dict(policy=p, quintile=q + 1, mean=v.mean(), ci=ci(v)))
             cells.append(f"{v.mean():+.2f}{{\\scriptsize$\\pm${ci(v):.2f}}}")
-        # platform top-up and couriers' extra riding cost vs J-EFF (c_km = 0.3 RMB/km on km actually ridden per courier-week)
-        m = e1.groupby("policy")[["topup_per_courier_week"]].mean()
+            rec.append(dict(policy=p, quintile=q + 1, mean=v.mean(), ci=ci(v)))
+        x = r[r.policy == p].set_index(K)
+        fx = (x.rate - base.rate.loc[x.index]).to_frame("d").assign(q=base.q.loc[x.index].values).groupby("q").d.mean()
+        spear = pd.concat([x.rate, base.rate], axis=1, keys=["a", "b"]).dropna().reset_index().groupby(["dist", "week", "seed"]).apply(
+            lambda t: t.a.corr(t.b, method="spearman"), include_groups=False).mean()
+        rec[-1].update(fixed_q1=fx.loc[0], fixed_q5=fx.loc[4], spearman=spear)
         ride = 0.3 * paired_diff(e1, p, "J-EFF", "km_cw")[0]
-        rows.append(f"{nm(p)} & " + " & ".join(cells) + f" & {m.loc[p, 'topup_per_courier_week']:.1f} & {ride:+.1f} \\\\")
-    m = e1.groupby("policy")["topup_per_courier_week"].mean()
+        rows.append(f"{nm(p)} & " + " & ".join(cells) + f" & {m.loc[p]:.1f} & {ride:+.1f} \\\\")
     rows.insert(0, "J-EFF & \\multicolumn{5}{c}{(reference)} & " + f"{m.loc['J-EFF']:.1f} & 0.0 \\\\")
-    (TAB / "whopays.tex").write_text("\\begin{tabular}{lrrrrrrr}\n\\toprule\n & \\multicolumn{5}{c}{Change in earnings rate by J-EFF quintile (RMB/h)} & Top-up & Riding \\\\\n Policy & Q1 (low) & Q2 & Q3 & Q4 & Q5 (high) & (RMB/cw) & (RMB/cw) \\\\\n\\midrule\n" + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}\n")
+    (TAB / "whopays.tex").write_text("\\begin{tabular}{lrrrrrrr}\n\\toprule\n & \\multicolumn{5}{c}{Change in mean rate of the policy's own quintile (RMB/h)} & Top-up & Riding \\\\\n & Q1 (low) & Q2 & Q3 & Q4 & Q5 (high) & & \\\\\n\\midrule\n"
+                                     + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}\n")
     out = pd.DataFrame(rec)
     out.to_csv(RES / "summary_whopays.csv", index=False)
+    return out
+
+
+def table_net():
+    """Courier net income relative to J-EFF: piece pay + cash top-up - riding cost, per courier-week."""
+    r = pd.read_csv(RES / "E28_rates.csv")
+    rho = json.load(open(RES / "calibration.json"))["rho"]
+    r = r.assign(top=np.maximum(r.dist.map(rho) * r.hours - r.earn, 0))
+    rows, rec = [], []
+    for p in ["OURS", "OURS-0", "FF-JR", "FF-JR-10", "J-EFF-0"]:
+        cells = {}
+        for c in (0.1, 0.3, 0.5):
+            t = r.assign(net=r.earn + r.top - c * r.km)
+            a, b = t[t.policy == p], t[t.policy == "J-EFF"]
+            cl = lambda x: x.groupby(CL + ["seed"]).net.mean()
+            all_ = (cl(a) - cl(b)).groupby(CL).mean()
+            cells[c] = all_
+            if c == 0.3:
+                q = (own_quintiles(a, "net") - own_quintiles(b, "net")).reset_index(name="d").groupby(["q"] + CL).d.mean()
+                tb = (cl(a[a.ptype == 1]) - cl(b[b.ptype == 1])).groupby(CL).mean()
+                lo, hi = q.loc[0], q.loc[4]
+        rec.append(dict(policy=p, all_c03=cells[0.3].mean(), ci=ci(cells[0.3]), p=stats.wilcoxon(cells[0.3]).pvalue, all_c01=cells[0.1].mean(), all_c05=cells[0.5].mean(), q1=lo.mean(), q5=hi.mean(), type_b=tb.mean()))
+        rows.append(f"{nm(p)} & {cells[0.3].mean():+.1f}{{\\scriptsize$\\pm${ci(cells[0.3]):.1f}}} & {lo.mean():+.1f} & {hi.mean():+.1f} & {tb.mean():+.1f} & {cells[0.1].mean():+.1f} & {cells[0.5].mean():+.1f} \\\\")
+    (TAB / "net.tex").write_text("\\begin{tabular}{lrrrrrr}\n\\toprule\n & \\multicolumn{4}{c}{$c_{\\mathrm{km}}=0.3$} & \\multicolumn{2}{c}{All, other $c_{\\mathrm{km}}$} \\\\\nPolicy & All & Q1 & Q5 & Type $B$ & 0.1 & 0.5 \\\\\n\\midrule\n"
+                                 + "\n".join(rows) + "\n\\bottomrule\n\\end{tabular}\n")
+    out = pd.DataFrame(rec)
+    out.to_csv(RES / "summary_net.csv", index=False)
+    return out
+
+
+def validation_subset():
+    """Validation weeks that contain no oracle day and no day the pilot script (quick.py rule) can select."""
+    sys.path.insert(0, str(ROOT / "code"))
+    from week import inst
+    d = pd.read_csv(RES / "E18.csv")
+    d["week"] = d.week.astype(int)
+    keep = []
+    for x in DISTS:
+        days = sorted(inst(x)["days"])
+        used = set(days[20:80:15]) | set(days[::max(1, len(days) // 6)][:6])
+        seen = set(d[d.dist == x].week)
+        keep += [(x, int(b[0])) for b in (days[i:i + 7] for i in range(0, len(days) - 6, 7)) if int(b[0]) in seen and not set(b) & used]
+    c = d.merge(pd.DataFrame(keep, columns=["dist", "week"]), on=["dist", "week"])
+    rec = []
+    for name, t in (("all", d), ("untouched", c)):
+        for a, b in (("OURS", "J-EFF"), ("OURS", "EFF"), ("J-EFF-0", "J-EFF"), ("OURS-0", "OURS"), ("FF-JR", "OURS")):
+            for col in ("gini", "shortfall", "gap_dis", "topup_per_courier_week", "ontime_rate", "mean_wait"):
+                g = t[t.policy.isin([a, b])].groupby(["policy"] + CL)[col].mean().unstack(0)
+                v = g[a] - g[b]
+                rec.append(dict(set=name, weeks=len(g), a=a, b=b, metric=col, diff=v.mean(), p=stats.wilcoxon(v).pvalue, same_sign=int((np.sign(v) == np.sign(v.mean())).sum())))
+    out = pd.DataFrame(rec)
+    out.to_csv(RES / "summary_validation.csv", index=False)
     return out
 
 
@@ -564,6 +629,8 @@ if __name__ == "__main__":
     print(pd.read_csv(RES / "summary_E1_diffs.csv").round(4).to_string())
     print(table_ablation().round(4).to_string())
     print(table_whopays().round(3).to_string())
+    print(table_net().round(3).to_string())
+    print(validation_subset().round(4).to_string())
     for f in (fig_tradeoff, fig_rates, fig_scarcity, fig_paired, fig_queue):
         try:
             r = f()

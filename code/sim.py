@@ -189,6 +189,7 @@ class Sim:
         self.o_who = np.full(self.n_o, -1)
         self.km_empty = 0.0
         self.km_total = 0.0
+        self.km_i = np.zeros(self.n)
         self.swaps = 0
         self.swap_wait = []
         self.stockouts = 0
@@ -280,6 +281,7 @@ class Sim:
         f = self.noise(c.e_noise, 9, i, t)
         self.E[i] -= km * self.whkm[i] * f
         self.km_total += km
+        self.km_i[i] += km
         self.xy[i] = self.dest[i]
         if self.E[i] < 0:  # only reachable without the energy filter
             self.strand += 1
